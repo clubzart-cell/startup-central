@@ -19,14 +19,28 @@ const Auth = () => {
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        // Clear invalid session
+      if (error || !session) {
+        // Clear any stale data
         await supabase.auth.signOut();
+        localStorage.clear();
         return;
       }
-      if (session) {
-        navigate("/dashboard");
+      
+      // Verify user still exists
+      const { error: userError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', session.user.id)
+        .single();
+        
+      if (userError) {
+        // User deleted, clear everything
+        await supabase.auth.signOut();
+        localStorage.clear();
+        return;
       }
+      
+      navigate("/dashboard");
     };
     checkAuth();
   }, [navigate]);

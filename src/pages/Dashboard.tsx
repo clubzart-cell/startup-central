@@ -16,27 +16,59 @@ const Dashboard = () => {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        if (!session) {
+      async (_event, session) => {
+        if (_event === 'SIGNED_OUT' || !session) {
+          setSession(null);
           navigate("/auth");
+          return;
         }
+        
+        // Verify user still exists in database
+        if (session) {
+          const { error: userError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', session.user.id)
+            .single();
+            
+          if (userError) {
+            // User doesn't exist, clear session
+            await supabase.auth.signOut();
+            localStorage.clear();
+            navigate("/auth");
+            return;
+          }
+        }
+        
+        setSession(session);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        // Clear invalid session and redirect to auth
-        supabase.auth.signOut();
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      if (error || !session) {
+        await supabase.auth.signOut();
+        localStorage.clear();
+        navigate("/auth");
+        setLoading(false);
+        return;
+      }
+      
+      // Verify user exists
+      const { error: userError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', session.user.id)
+        .single();
+        
+      if (userError) {
+        await supabase.auth.signOut();
+        localStorage.clear();
         navigate("/auth");
         setLoading(false);
         return;
       }
       
       setSession(session);
-      if (!session) {
-        navigate("/auth");
-      }
       setLoading(false);
     });
 
