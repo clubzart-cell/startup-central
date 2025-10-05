@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Lightbulb } from "lucide-react";
+import { Plus, Lightbulb, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { IdeaDialog } from "./IdeaDialog";
 
@@ -76,6 +76,19 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
     setDraggedIdea(null);
   };
 
+  const handleDelete = async (e: React.MouseEvent, ideaId: string) => {
+    e.stopPropagation();
+    
+    const { error } = await supabase.from("ideas").delete().eq("id", ideaId);
+    
+    if (error) {
+      toast.error("Failed to delete idea");
+    } else {
+      toast.success("Idea deleted");
+      fetchIdeas();
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64">Loading ideas...</div>;
   }
@@ -113,7 +126,7 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
                     key={idea.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, idea)}
-                    className={`gradient-card border-border/50 hover:shadow-card transition-smooth cursor-move ${
+                    className={`group gradient-card border-border/50 hover:shadow-card transition-smooth cursor-move ${
                       draggedIdea?.id === idea.id ? 'opacity-50' : ''
                     }`}
                     onClick={() => {
@@ -124,7 +137,15 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-start gap-2">
                         <Lightbulb className="h-4 w-4 mt-1 text-primary flex-shrink-0" />
-                        <span>{idea.title}</span>
+                        <span className="flex-1">{idea.title}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                          onClick={(e) => handleDelete(e, idea.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
