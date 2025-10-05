@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { DashboardStats } from "./DashboardStats";
 import { TasksPage } from "@/components/tasks/TasksPage";
@@ -40,8 +40,14 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full flex-col md:flex-row">
+        <header className="sticky top-0 z-50 flex items-center gap-2 border-b bg-background px-4 py-3 md:hidden">
+          <SidebarTrigger className="h-8 w-8" />
+          <h1 className="text-lg font-semibold">Startup Central</h1>
+        </header>
+        
         <AppSidebar workspaceId={workspaceId} />
+        
         <main className="flex-1 p-6 overflow-auto">
           <div className="max-w-7xl mx-auto space-y-6">
             <Routes>
