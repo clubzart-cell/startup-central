@@ -7,7 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Copy, UserPlus, Shield, Trash2 } from "lucide-react";
+import { Copy, UserPlus, Shield, Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useNavigate } from "react-router-dom";
 
 interface SettingsPageProps {
   workspaceId: string;
@@ -15,10 +27,13 @@ interface SettingsPageProps {
 }
 
 export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
+  const navigate = useNavigate();
   const [workspace, setWorkspace] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isCreator, setIsCreator] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
   useEffect(() => {
     fetchWorkspaceData();
@@ -45,6 +60,7 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
       .single();
 
     setWorkspace(data);
+    setIsCreator(data?.created_by === userId);
     setLoading(false);
   };
 
@@ -94,6 +110,30 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
     } else {
       fetchMembers();
       toast.success("Member removed");
+    }
+  };
+
+  const deleteWorkspace = async () => {
+    if (!isAdmin && !isCreator) {
+      toast.error("Only admins or the workspace creator can delete the workspace");
+      return;
+    }
+
+    if (deleteConfirmation !== workspace?.name) {
+      toast.error("Workspace name doesn't match");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("workspaces")
+      .delete()
+      .eq("id", workspaceId);
+
+    if (error) {
+      toast.error("Failed to delete workspace");
+    } else {
+      toast.success("Workspace deleted successfully");
+      navigate("/");
     }
   };
 
@@ -213,6 +253,67 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
               You are a member of this workspace. Contact an admin to change permissions or workspace settings.
             </CardDescription>
           </CardHeader>
+        </Card>
+      )}
+
+      {(isAdmin || isCreator) && (
+        <Card className="gradient-card border-destructive/50">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            </div>
+            <CardDescription>
+              Permanently delete this workspace and all its data. This action cannot be undone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="w-full sm:w-auto">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Workspace
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the workspace <span className="font-semibold">"{workspace?.name}"</span> and remove all associated data including:
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>All tasks and their history</li>
+                      <li>All meetings and participants</li>
+                      <li>All ideas and discussions</li>
+                      <li>All notifications</li>
+                      <li>All team members will lose access</li>
+                    </ul>
+                    <div className="mt-4">
+                      <Label htmlFor="confirmation" className="text-sm font-medium">
+                        Type the workspace name <span className="font-semibold">"{workspace?.name}"</span> to confirm:
+                      </Label>
+                      <Input
+                        id="confirmation"
+                        value={deleteConfirmation}
+                        onChange={(e) => setDeleteConfirmation(e.target.value)}
+                        placeholder="Enter workspace name"
+                        className="mt-2"
+                      />
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setDeleteConfirmation("")}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={deleteWorkspace}
+                    disabled={deleteConfirmation !== workspace?.name}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete Workspace
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
         </Card>
       )}
     </div>
