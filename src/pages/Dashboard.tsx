@@ -15,93 +15,149 @@ const Dashboard = () => {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        if (!mounted) return;
+        
         if (_event === 'SIGNED_OUT' || !session) {
           setSession(null);
-          navigate("/auth");
+          localStorage.clear();
+          window.location.href = "/auth";
           return;
         }
         
         // Verify user still exists in database
         if (session) {
-          const { error: userError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', session.user.id)
-            .single();
+          try {
+            const { error: userError } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', session.user.id)
+              .single();
+              
+            if (userError || !mounted) {
+              // User doesn't exist, clear session
+              await supabase.auth.signOut();
+              localStorage.clear();
+              window.location.href = "/auth";
+              return;
+            }
             
-          if (userError) {
-            // User doesn't exist, clear session
+            setSession(session);
+          } catch (e) {
+            console.error('Auth verification error:', e);
             await supabase.auth.signOut();
             localStorage.clear();
-            navigate("/auth");
-            return;
+            window.location.href = "/auth";
           }
         }
-        
-        setSession(session);
       }
     );
 
+    // Add timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      if (loading && mounted) {
+        console.error('Loading timeout - clearing session');
+        supabase.auth.signOut();
+        localStorage.clear();
+        window.location.href = "/auth";
+      }
+    }, 10000); // 10 second timeout
+
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      if (!mounted) return;
+      
       if (error || !session) {
         await supabase.auth.signOut();
         localStorage.clear();
-        navigate("/auth");
         setLoading(false);
+        navigate("/auth");
         return;
       }
       
       // Verify user exists
-      const { error: userError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', session.user.id)
-        .single();
+      try {
+        const { error: userError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', session.user.id)
+          .single();
+          
+        if (userError) {
+          await supabase.auth.signOut();
+          localStorage.clear();
+          setLoading(false);
+          navigate("/auth");
+          return;
+        }
         
-      if (userError) {
+        if (mounted) {
+          setSession(session);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('Session verification error:', e);
         await supabase.auth.signOut();
         localStorage.clear();
-        navigate("/auth");
         setLoading(false);
-        return;
+        navigate("/auth");
       }
-      
-      setSession(session);
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      clearTimeout(loadingTimeout);
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   useEffect(() => {
+    let mounted = true;
+    
     const checkWorkspace = async () => {
       const storedWorkspaceId = localStorage.getItem("selectedWorkspace");
       
       if (storedWorkspaceId && session) {
-        // Verify the workspace still exists and user has access
-        const { data, error } = await supabase
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("workspace_id", storedWorkspaceId)
-          .eq("user_id", session.user.id)
-          .single();
+        try {
+          // Verify the workspace still exists and user has access
+          const { data, error } = await supabase
+            .from("workspace_members")
+            .select("workspace_id")
+            .eq("workspace_id", storedWorkspaceId)
+            .eq("user_id", session.user.id)
+            .single();
 
-        if (!error && data) {
-          setSelectedWorkspace(storedWorkspaceId);
-        } else {
-          localStorage.removeItem("selectedWorkspace");
-          setSelectedWorkspace(null);
+          if (mounted) {
+            if (!error && data) {
+              setSelectedWorkspace(storedWorkspaceId);
+            } else {
+              localStorage.removeItem("selectedWorkspace");
+              setSelectedWorkspace(null);
+            }
+          }
+        } catch (e) {
+          console.error('Workspace check error:', e);
+          if (mounted) {
+            localStorage.removeItem("selectedWorkspace");
+            setSelectedWorkspace(null);
+          }
         }
       }
       
-      setCheckingWorkspace(false);
+      if (mounted) {
+        setCheckingWorkspace(false);
+      }
     };
 
     if (!loading && session) {
       checkWorkspace();
     }
+    
+    return () => {
+      mounted = false;
+    };
   }, [loading, session]);
 
   if (loading || checkingWorkspace) {
