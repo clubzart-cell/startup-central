@@ -84,7 +84,23 @@ export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
           >
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
               <div className="flex-1">
-                <CardTitle className="text-xl">{meeting.title}</CardTitle>
+                <CardTitle className="text-xl mb-3">{meeting.title}</CardTitle>
+                <div className="space-y-2 mb-3">
+                  <div className="flex items-center gap-2 text-base font-semibold text-primary">
+                    <Calendar className="h-5 w-5" />
+                    {new Date(meeting.start_time).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric',
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 text-base font-semibold text-primary">
+                    <Clock className="h-5 w-5" />
+                    {new Date(meeting.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                    {new Date(meeting.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
                 {meeting.description && (
                   <p className="text-sm text-muted-foreground mt-2">{meeting.description}</p>
                 )}
@@ -94,17 +110,6 @@ export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
               </Badge>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  {new Date(meeting.start_time).toLocaleDateString()}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  {new Date(meeting.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
-                  {new Date(meeting.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
               {meeting.location && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <MapPin className="h-4 w-4" />

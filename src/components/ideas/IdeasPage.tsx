@@ -23,6 +23,7 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState<any>(null);
+  const [draggedIdea, setDraggedIdea] = useState<any>(null);
 
   useEffect(() => {
     fetchIdeas();
@@ -57,6 +58,24 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
     }
   };
 
+  const handleDragStart = (e: React.DragEvent, idea: any) => {
+    setDraggedIdea(idea);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    if (draggedIdea && draggedIdea.status !== newStatus) {
+      updateIdeaStatus(draggedIdea.id, newStatus);
+    }
+    setDraggedIdea(null);
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64">Loading ideas...</div>;
   }
@@ -82,13 +101,21 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
               </Badge>
             </div>
 
-            <div className="space-y-3">
+            <div 
+              className="space-y-3 min-h-[200px] p-2 rounded-lg border-2 border-dashed border-transparent hover:border-primary/30 transition-smooth"
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, column.id)}
+            >
               {ideas
                 .filter((idea) => idea.status === column.id)
                 .map((idea) => (
                   <Card
                     key={idea.id}
-                    className="gradient-card border-border/50 hover:shadow-card transition-smooth cursor-pointer"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idea)}
+                    className={`gradient-card border-border/50 hover:shadow-card transition-smooth cursor-move ${
+                      draggedIdea?.id === idea.id ? 'opacity-50' : ''
+                    }`}
                     onClick={() => {
                       setSelectedIdea(idea);
                       setDialogOpen(true);
@@ -114,8 +141,8 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
                 ))}
 
               {ideas.filter((i) => i.status === column.id).length === 0 && (
-                <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed border-border rounded-lg">
-                  No ideas yet
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Drop ideas here
                 </div>
               )}
             </div>
