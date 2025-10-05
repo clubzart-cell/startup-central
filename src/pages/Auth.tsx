@@ -18,7 +18,12 @@ const Auth = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        // Clear invalid session
+        await supabase.auth.signOut();
+        return;
+      }
       if (session) {
         navigate("/dashboard");
       }

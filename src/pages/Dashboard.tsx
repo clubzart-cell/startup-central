@@ -24,7 +24,15 @@ const Dashboard = () => {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        // Clear invalid session and redirect to auth
+        supabase.auth.signOut();
+        navigate("/auth");
+        setLoading(false);
+        return;
+      }
+      
       setSession(session);
       if (!session) {
         navigate("/auth");
