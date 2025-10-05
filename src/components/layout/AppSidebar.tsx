@@ -16,17 +16,19 @@ import { toast } from "sonner";
 
 interface AppSidebarProps {
   workspaceId: string;
+  onNavigate: (page: string) => void;
+  currentPage: string;
 }
 
 const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
-  { title: "Tasks", icon: CheckSquare, section: "tasks" },
-  { title: "Meetings", icon: Calendar, section: "meetings" },
-  { title: "Ideas", icon: Lightbulb, section: "ideas" },
-  { title: "Notifications", icon: Bell, section: "notifications" },
+  { title: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
+  { title: "Tasks", icon: CheckSquare, id: "tasks" },
+  { title: "Meetings", icon: Calendar, id: "meetings" },
+  { title: "Ideas", icon: Lightbulb, id: "ideas" },
+  { title: "Notifications", icon: Bell, id: "notifications" },
 ];
 
-export function AppSidebar({ workspaceId }: AppSidebarProps) {
+export function AppSidebar({ workspaceId, onNavigate, currentPage }: AppSidebarProps) {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -50,8 +52,14 @@ export function AppSidebar({ workspaceId }: AppSidebarProps) {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <button className="flex items-center gap-2 w-full">
+                  <SidebarMenuButton 
+                    asChild
+                    isActive={currentPage === item.id}
+                  >
+                    <button 
+                      className="flex items-center gap-2 w-full"
+                      onClick={() => onNavigate(item.id)}
+                    >
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </button>
@@ -67,7 +75,10 @@ export function AppSidebar({ workspaceId }: AppSidebarProps) {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <button className="flex items-center gap-2 w-full">
+                  <button 
+                    className="flex items-center gap-2 w-full"
+                    onClick={() => onNavigate("settings")}
+                  >
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
                   </button>

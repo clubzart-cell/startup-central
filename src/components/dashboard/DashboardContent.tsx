@@ -4,6 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { DashboardStats } from "./DashboardStats";
+import { TasksPage } from "@/components/tasks/TasksPage";
+import { MeetingsPage } from "@/components/meetings/MeetingsPage";
+import { IdeasPage } from "@/components/ideas/IdeasPage";
+import { NotificationsPage } from "@/components/notifications/NotificationsPage";
+import { SettingsPage } from "@/components/settings/SettingsPage";
 import { toast } from "sonner";
 
 interface DashboardContentProps {
@@ -13,6 +18,7 @@ interface DashboardContentProps {
 
 export const DashboardContent = ({ workspaceId, session }: DashboardContentProps) => {
   const [profile, setProfile] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState("dashboard");
 
   useEffect(() => {
     fetchProfile();
@@ -32,12 +38,21 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
     }
   };
 
-  return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full">
-        <AppSidebar workspaceId={workspaceId} />
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-7xl mx-auto space-y-6">
+  const renderPage = () => {
+    switch (currentPage) {
+      case "tasks":
+        return <TasksPage workspaceId={workspaceId} userId={session.user.id} />;
+      case "meetings":
+        return <MeetingsPage workspaceId={workspaceId} userId={session.user.id} />;
+      case "ideas":
+        return <IdeasPage workspaceId={workspaceId} userId={session.user.id} />;
+      case "notifications":
+        return <NotificationsPage workspaceId={workspaceId} userId={session.user.id} />;
+      case "settings":
+        return <SettingsPage workspaceId={workspaceId} userId={session.user.id} />;
+      default:
+        return (
+          <>
             <div className="space-y-2">
               <h1 className="text-3xl font-bold">
                 Welcome back, {profile?.full_name || "there"}!
@@ -47,6 +62,18 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
               </p>
             </div>
             <DashboardStats workspaceId={workspaceId} userId={session.user.id} />
+          </>
+        );
+    }
+  };
+
+  return (
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar workspaceId={workspaceId} onNavigate={setCurrentPage} currentPage={currentPage} />
+        <main className="flex-1 p-6 overflow-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {renderPage()}
           </div>
         </main>
       </div>
