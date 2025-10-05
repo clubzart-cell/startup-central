@@ -1,4 +1,5 @@
 import { LayoutDashboard, CheckSquare, Calendar, Lightbulb, Bell, Settings, LogOut } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -11,24 +12,21 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 interface AppSidebarProps {
   workspaceId: string;
-  onNavigate: (page: string) => void;
-  currentPage: string;
 }
 
 const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
-  { title: "Tasks", icon: CheckSquare, id: "tasks" },
-  { title: "Meetings", icon: Calendar, id: "meetings" },
-  { title: "Ideas", icon: Lightbulb, id: "ideas" },
-  { title: "Notifications", icon: Bell, id: "notifications" },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+  { title: "Tasks", icon: CheckSquare, path: "/dashboard/tasks" },
+  { title: "Meetings", icon: Calendar, path: "/dashboard/meetings" },
+  { title: "Ideas", icon: Lightbulb, path: "/dashboard/ideas" },
+  { title: "Notifications", icon: Bell, path: "/dashboard/notifications" },
 ];
 
-export function AppSidebar({ workspaceId, onNavigate, currentPage }: AppSidebarProps) {
+export function AppSidebar({ workspaceId }: AppSidebarProps) {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -36,6 +34,7 @@ export function AppSidebar({ workspaceId, onNavigate, currentPage }: AppSidebarP
     if (error) {
       toast.error("Failed to sign out");
     } else {
+      localStorage.removeItem("selectedWorkspace");
       toast.success("Signed out successfully");
       navigate("/auth");
     }
@@ -52,17 +51,17 @@ export function AppSidebar({ workspaceId, onNavigate, currentPage }: AppSidebarP
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild
-                    isActive={currentPage === item.id}
-                  >
-                    <button 
-                      className="flex items-center gap-2 w-full"
-                      onClick={() => onNavigate(item.id)}
+                  <SidebarMenuButton asChild>
+                    <NavLink 
+                      to={item.path}
+                      end={item.path === "/dashboard"}
+                      className={({ isActive }) => 
+                        isActive ? "bg-accent text-accent-foreground" : ""
+                      }
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
-                    </button>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -75,13 +74,15 @@ export function AppSidebar({ workspaceId, onNavigate, currentPage }: AppSidebarP
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <button 
-                    className="flex items-center gap-2 w-full"
-                    onClick={() => onNavigate("settings")}
+                  <NavLink 
+                    to="/dashboard/settings"
+                    className={({ isActive }) => 
+                      isActive ? "bg-accent text-accent-foreground" : ""
+                    }
                   >
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
-                  </button>
+                  </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

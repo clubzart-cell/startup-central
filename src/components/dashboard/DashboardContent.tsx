@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -18,7 +19,6 @@ interface DashboardContentProps {
 
 export const DashboardContent = ({ workspaceId, session }: DashboardContentProps) => {
   const [profile, setProfile] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState("dashboard");
 
   useEffect(() => {
     fetchProfile();
@@ -38,42 +38,33 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
     }
   };
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case "tasks":
-        return <TasksPage workspaceId={workspaceId} userId={session.user.id} />;
-      case "meetings":
-        return <MeetingsPage workspaceId={workspaceId} userId={session.user.id} />;
-      case "ideas":
-        return <IdeasPage workspaceId={workspaceId} userId={session.user.id} />;
-      case "notifications":
-        return <NotificationsPage workspaceId={workspaceId} userId={session.user.id} />;
-      case "settings":
-        return <SettingsPage workspaceId={workspaceId} userId={session.user.id} />;
-      default:
-        return (
-          <>
-            <div className="space-y-2">
-              <h1 className="text-3xl font-bold">
-                Welcome back, {profile?.full_name || "there"}!
-              </h1>
-              <p className="text-muted-foreground">
-                Here's what's happening with your workspace today.
-              </p>
-            </div>
-            <DashboardStats workspaceId={workspaceId} userId={session.user.id} />
-          </>
-        );
-    }
-  };
-
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <AppSidebar workspaceId={workspaceId} onNavigate={setCurrentPage} currentPage={currentPage} />
+        <AppSidebar workspaceId={workspaceId} />
         <main className="flex-1 p-6 overflow-auto">
           <div className="max-w-7xl mx-auto space-y-6">
-            {renderPage()}
+            <Routes>
+              <Route index element={
+                <>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-bold">
+                      Welcome back, {profile?.full_name || "there"}!
+                    </h1>
+                    <p className="text-muted-foreground">
+                      Here's what's happening with your workspace today.
+                    </p>
+                  </div>
+                  <DashboardStats workspaceId={workspaceId} userId={session.user.id} />
+                </>
+              } />
+              <Route path="tasks" element={<TasksPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="meetings" element={<MeetingsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="ideas" element={<IdeasPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="notifications" element={<NotificationsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="settings" element={<SettingsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
           </div>
         </main>
       </div>
