@@ -10,7 +10,9 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(() => {
+    return localStorage.getItem("selectedWorkspace");
+  });
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -41,8 +43,13 @@ const Dashboard = () => {
     );
   }
 
+  const handleWorkspaceSelect = (workspaceId: string) => {
+    localStorage.setItem("selectedWorkspace", workspaceId);
+    setSelectedWorkspace(workspaceId);
+  };
+
   if (!selectedWorkspace) {
-    return <WorkspaceSelector onSelectWorkspace={setSelectedWorkspace} />;
+    return <WorkspaceSelector onSelectWorkspace={handleWorkspaceSelect} />;
   }
 
   return <DashboardContent workspaceId={selectedWorkspace} session={session!} />;
