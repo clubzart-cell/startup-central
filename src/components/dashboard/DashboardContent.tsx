@@ -21,38 +21,22 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
   const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
-    let mounted = true;
-    let isFetching = false;
-
-    const fetchProfile = async () => {
-      if (isFetching) return;
-      isFetching = true;
-      
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (mounted && !error && data) {
-          setProfile(data);
-        } else if (error) {
-          console.error("Profile fetch error:", error);
-        }
-      } catch (e) {
-        console.error("Profile fetch exception:", e);
-      } finally {
-        isFetching = false;
-      }
-    };
-
     fetchProfile();
+  }, [session]);
 
-    return () => {
-      mounted = false;
-    };
-  }, [session.user.id]);
+  const fetchProfile = async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", session.user.id)
+      .single();
+
+    if (error) {
+      toast.error("Failed to load profile");
+    } else {
+      setProfile(data);
+    }
+  };
 
   return (
     <SidebarProvider>

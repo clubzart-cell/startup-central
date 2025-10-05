@@ -82,37 +82,23 @@ const Auth = () => {
     }
 
     setLoading(true);
-    
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-          },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
         },
-      });
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
 
-      if (error) {
-        console.error("Signup error:", error);
-        toast.error(error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (data?.user) {
-        toast.success("Account created! Welcome aboard!");
-        // Wait a moment for profile creation
-        setTimeout(() => {
-          navigate("/dashboard");
-        }, 500);
-      }
-    } catch (error) {
-      console.error("Signup exception:", error);
-      toast.error("An error occurred during signup. Please try again.");
+    if (error) {
+      toast.error(error.message);
       setLoading(false);
+    } else {
+      toast.success("Account created! Welcome aboard!");
+      navigate("/dashboard");
     }
   };
 

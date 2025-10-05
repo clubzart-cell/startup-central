@@ -29,27 +29,13 @@ export function AppSidebar({ workspaceId }: AppSidebarProps) {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    try {
-      // Clear all local storage first
-      localStorage.clear();
-      
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error("Sign out error:", error);
-        toast.error("Failed to sign out");
-      } else {
-        toast.success("Signed out successfully");
-      }
-      
-      // Force reload to clear any cached state
-      window.location.href = "/auth";
-    } catch (e) {
-      console.error("Sign out exception:", e);
-      // Even if there's an error, clear storage and redirect
-      localStorage.clear();
-      window.location.href = "/auth";
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Failed to sign out");
+    } else {
+      localStorage.removeItem("selectedWorkspace");
+      toast.success("Signed out successfully");
+      navigate("/auth");
     }
   };
 
