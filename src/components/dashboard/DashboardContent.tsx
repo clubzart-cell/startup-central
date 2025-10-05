@@ -45,7 +45,7 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
         <main className="flex-1 p-6 overflow-auto">
           <div className="max-w-7xl mx-auto space-y-6">
             <Routes>
-              <Route path="/" element={
+              <Route index element={
                 <>
                   <div className="space-y-2">
                     <h1 className="text-3xl font-bold">
@@ -58,11 +58,11 @@ export const DashboardContent = ({ workspaceId, session }: DashboardContentProps
                   <DashboardStats workspaceId={workspaceId} userId={session.user.id} />
                 </>
               } />
-              <Route path="/tasks" element={<TasksPage workspaceId={workspaceId} userId={session.user.id} />} />
-              <Route path="/meetings" element={<MeetingsPage workspaceId={workspaceId} userId={session.user.id} />} />
-              <Route path="/ideas" element={<IdeasPage workspaceId={workspaceId} userId={session.user.id} />} />
-              <Route path="/notifications" element={<NotificationsPage workspaceId={workspaceId} userId={session.user.id} />} />
-              <Route path="/settings" element={<SettingsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="tasks" element={<TasksPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="meetings" element={<MeetingsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="ideas" element={<IdeasPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="notifications" element={<NotificationsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="settings" element={<SettingsPage workspaceId={workspaceId} userId={session.user.id} />} />
             </Routes>
           </div>
         </main>
