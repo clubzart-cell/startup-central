@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Circle, AlertCircle, Calendar, Loader2, Clock, Flag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface DashboardStatsProps {
   workspaceId: string;
@@ -43,9 +44,9 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
       .limit(5);
 
     const totalTasks = tasks?.length || 0;
-    const completedTasks = tasks?.filter((t) => t.is_completed).length || 0;
+    const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
     const pendingTasks = totalTasks - completedTasks;
-    const urgentTasks = tasks?.filter((t) => t.priority === "urgent" && !t.is_completed).length || 0;
+    const urgentTasks = tasks?.filter((t) => t.priority === "urgent" && t.status !== "completed").length || 0;
     const todayMeetings = meetings?.length || 0;
 
     setStats({
@@ -60,13 +61,22 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
     setLoading(false);
   };
 
-  const toggleTaskComplete = async (taskId: string, currentStatus: boolean) => {
-    await supabase
+  const updateTaskStatus = async (taskId: string, newStatus: "pending" | "ongoing" | "pending_approval" | "completed") => {
+    const { error } = await supabase
       .from("tasks")
-      .update({ is_completed: !currentStatus })
+      .update({ status: newStatus })
       .eq("id", taskId);
     
-    fetchStats();
+    if (error) {
+      toast.error("Failed to update task status");
+    } else {
+      fetchStats();
+      if (newStatus === "pending_approval") {
+        toast.success("Completion request sent to admin");
+      } else if (newStatus === "ongoing") {
+        toast.success("Task marked as ongoing");
+      }
+    }
   };
 
   const priorityColors = {
@@ -163,31 +173,53 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
               <p className="text-sm text-muted-foreground text-center py-4">No tasks assigned</p>
             ) : (
               assignedTasks.map((task) => (
-                <div key={task.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-accent/50 transition-smooth">
-                  <Checkbox
-                    checked={task.is_completed}
-                    onCheckedChange={() => toggleTaskComplete(task.id, task.is_completed)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className={`text-sm font-medium ${task.is_completed ? 'line-through text-muted-foreground' : ''}`}>
-                        {task.title}
-                      </p>
-                      <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
-                        {task.priority}
-                      </Badge>
-                    </div>
-                    {task.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">{task.description}</p>
-                    )}
-                    {task.deadline && (
-                      <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {new Date(task.deadline).toLocaleDateString()}
+                <div key={task.id} className="flex flex-col gap-2 p-3 rounded-lg border border-border/50 hover:bg-accent/50 transition-smooth">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className={`text-sm font-medium ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>
+                          {task.title}
+                        </p>
+                        <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
+                          {task.priority}
+                        </Badge>
                       </div>
-                    )}
+                      {task.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">{task.description}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        {task.deadline && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {new Date(task.deadline).toLocaleDateString()}
+                          </div>
+                        )}
+                        <Badge variant="outline" className="text-xs">
+                          {task.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
+                  {task.status === "pending" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateTaskStatus(task.id, "ongoing")}
+                      className="w-full"
+                    >
+                      Start Task
+                    </Button>
+                  )}
+                  {task.status === "ongoing" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateTaskStatus(task.id, "pending_approval")}
+                      className="w-full"
+                    >
+                      Request Completion
+                    </Button>
+                  )}
                 </div>
               ))
             )}

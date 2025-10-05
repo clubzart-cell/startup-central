@@ -21,9 +21,10 @@ const priorityColors = {
 };
 
 const statusColumns = [
-  { id: "pending", title: "Pending", filter: (task: any) => !task.is_completed },
-  { id: "ongoing", title: "Ongoing", filter: (task: any) => !task.is_completed && (task.priority === "high" || task.priority === "urgent") },
-  { id: "completed", title: "Completed", filter: (task: any) => task.is_completed },
+  { id: "pending", title: "Pending", filter: (task: any) => task.status === "pending" },
+  { id: "ongoing", title: "Ongoing", filter: (task: any) => task.status === "ongoing" },
+  { id: "pending_approval", title: "Awaiting Approval", filter: (task: any) => task.status === "pending_approval" },
+  { id: "completed", title: "Completed", filter: (task: any) => task.status === "completed" },
 ];
 
 export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
@@ -69,17 +70,23 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
     setLoading(false);
   };
 
-  const toggleTaskComplete = async (taskId: string, currentStatus: boolean) => {
+  const updateTaskStatus = async (taskId: string, newStatus: "pending" | "ongoing" | "pending_approval" | "completed") => {
     const { error } = await supabase
       .from("tasks")
-      .update({ is_completed: !currentStatus })
+      .update({ status: newStatus })
       .eq("id", taskId);
 
     if (error) {
-      toast.error("Failed to update task");
+      toast.error("Failed to update task status");
     } else {
       fetchTasks();
-      toast.success(currentStatus ? "Task marked incomplete" : "Task completed!");
+      if (newStatus === "pending_approval") {
+        toast.success("Completion request sent to admin for approval");
+      } else if (newStatus === "completed") {
+        toast.success("Task marked as completed!");
+      } else if (newStatus === "ongoing") {
+        toast.success("Task marked as ongoing");
+      }
     }
   };
 
@@ -99,7 +106,7 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statusColumns.map((column) => {
           const columnTasks = tasks.filter(column.filter);
           return (
@@ -122,23 +129,15 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
                     }}
                   >
                     <CardHeader className="pb-3">
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          checked={task.is_completed}
-                          onCheckedChange={() => toggleTaskComplete(task.id, task.is_completed)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <CardTitle className="text-base mb-2">
-                            <span className={task.is_completed ? 'line-through text-muted-foreground' : ''}>
-                              {task.title}
-                            </span>
-                          </CardTitle>
-                          <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
-                            {task.priority}
-                          </Badge>
-                        </div>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-base mb-2">
+                          <span className={task.status === 'completed' ? 'line-through text-muted-foreground' : ''}>
+                            {task.title}
+                          </span>
+                        </CardTitle>
+                        <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
+                          {task.priority}
+                        </Badge>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -147,7 +146,7 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
                           {task.description}
                         </p>
                       )}
-                      <div className="space-y-2 text-sm text-muted-foreground">
+                      <div className="space-y-2 text-sm text-muted-foreground mb-3">
                         {task.deadline && (
                           <div className="flex items-center gap-2">
                             <Calendar className="h-3 w-3" />
@@ -159,6 +158,49 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
                             <User className="h-3 w-3" />
                             {task.assigned_to_profile.full_name}
                           </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        {task.status === "pending" && task.assigned_to === userId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => updateTaskStatus(task.id, "ongoing")}
+                            className="flex-1"
+                          >
+                            Start Task
+                          </Button>
+                        )}
+                        {task.status === "ongoing" && task.assigned_to === userId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => updateTaskStatus(task.id, "pending_approval")}
+                            className="flex-1"
+                          >
+                            Request Completion
+                          </Button>
+                        )}
+                        {task.status === "pending_approval" && canCreate && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => updateTaskStatus(task.id, "completed")}
+                              className="flex-1"
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateTaskStatus(task.id, "ongoing")}
+                              className="flex-1"
+                            >
+                              Reject
+                            </Button>
+                          </>
                         )}
                       </div>
                     </CardContent>

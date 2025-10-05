@@ -238,8 +238,8 @@ export type Database = {
           deadline: string | null
           description: string | null
           id: string
-          is_completed: boolean
           priority: Database["public"]["Enums"]["app_priority"]
+          status: Database["public"]["Enums"]["task_status"]
           title: string
           updated_at: string
           workspace_id: string
@@ -251,8 +251,8 @@ export type Database = {
           deadline?: string | null
           description?: string | null
           id?: string
-          is_completed?: boolean
           priority?: Database["public"]["Enums"]["app_priority"]
+          status?: Database["public"]["Enums"]["task_status"]
           title: string
           updated_at?: string
           workspace_id: string
@@ -264,8 +264,8 @@ export type Database = {
           deadline?: string | null
           description?: string | null
           id?: string
-          is_completed?: boolean
           priority?: Database["public"]["Enums"]["app_priority"]
+          status?: Database["public"]["Enums"]["task_status"]
           title?: string
           updated_at?: string
           workspace_id?: string
@@ -392,6 +392,7 @@ export type Database = {
       app_priority: "low" | "medium" | "high" | "urgent"
       app_role: "admin" | "member"
       meeting_status: "upcoming" | "ongoing" | "ended"
+      task_status: "pending" | "ongoing" | "pending_approval" | "completed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -522,6 +523,7 @@ export const Constants = {
       app_priority: ["low", "medium", "high", "urgent"],
       app_role: ["admin", "member"],
       meeting_status: ["upcoming", "ongoing", "ended"],
+      task_status: ["pending", "ongoing", "pending_approval", "completed"],
     },
   },
 } as const
