@@ -10,159 +10,108 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [checkingWorkspace, setCheckingWorkspace] = useState(true);
+  const [profile, setProfile] = useState<any>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    let isVerifying = false; // Prevent duplicate verification calls
-    
-    const verifyUser = async (session: Session): Promise<boolean> => {
-      if (isVerifying) return false;
-      isVerifying = true;
-      
-      try {
-        const { error } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', session.user.id)
-          .maybeSingle();
-          
-        isVerifying = false;
-        return !error;
-      } catch (e) {
-        console.error('User verification error:', e);
-        isVerifying = false;
-        return false;
-      }
-    };
     
     const handleAuthError = async () => {
       if (!mounted) return;
       localStorage.clear();
+      sessionStorage.clear();
       await supabase.auth.signOut();
       window.location.href = "/auth";
     };
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!mounted) return;
+    const initialize = async () => {
+      try {
+        // 1. Get session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (_event === 'SIGNED_OUT' || !session) {
-          setSession(null);
-          localStorage.clear();
-          window.location.href = "/auth";
+        if (sessionError || !session) {
+          await handleAuthError();
           return;
         }
+
+        // 2. Fetch profile (consolidate into single call)
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
         
-        if (session) {
-          const isValid = await verifyUser(session);
-          if (!isValid || !mounted) {
-            await handleAuthError();
-            return;
-          }
-          setSession(session);
+        if (!profileData) {
+          await handleAuthError();
+          return;
         }
-      }
-    );
 
-    // Reduced timeout and better error handling
-    const loadingTimeout = setTimeout(() => {
-      if (loading && mounted) {
-        console.error('Loading timeout - retrying...');
-        handleAuthError();
-      }
-    }, 15000); // 15 second timeout
-
-    // Initial session check
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      if (!mounted) return;
-      
-      if (error || !session) {
-        await handleAuthError();
-        setLoading(false);
-        return;
-      }
-      
-      const isValid = await verifyUser(session);
-      if (!isValid || !mounted) {
-        await handleAuthError();
-        setLoading(false);
-        return;
-      }
-      
-      if (mounted) {
-        setSession(session);
-        setLoading(false);
-      }
-    }).catch(async (e) => {
-      console.error('Session check error:', e);
-      if (mounted) {
-        await handleAuthError();
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      clearTimeout(loadingTimeout);
-      subscription.unsubscribe();
-    };
-  }, [navigate]);
-
-  useEffect(() => {
-    let mounted = true;
-    let isChecking = false; // Prevent duplicate workspace checks
-    
-    const checkWorkspace = async () => {
-      if (isChecking || !session) return;
-      isChecking = true;
-      
-      const storedWorkspaceId = localStorage.getItem("selectedWorkspace");
-      
-      if (storedWorkspaceId) {
-        try {
-          const { data, error } = await supabase
+        // 3. Check workspace membership
+        const storedWorkspaceId = localStorage.getItem("selectedWorkspace");
+        if (storedWorkspaceId) {
+          const { data: membership } = await supabase
             .from("workspace_members")
             .select("workspace_id")
             .eq("workspace_id", storedWorkspaceId)
             .eq("user_id", session.user.id)
             .maybeSingle();
-
-          if (mounted) {
-            if (!error && data) {
-              setSelectedWorkspace(storedWorkspaceId);
-            } else {
-              localStorage.removeItem("selectedWorkspace");
-              setSelectedWorkspace(null);
-            }
-          }
-        } catch (e) {
-          console.error('Workspace check error:', e);
-          if (mounted) {
+          
+          if (membership && mounted) {
+            setSelectedWorkspace(storedWorkspaceId);
+          } else if (mounted) {
             localStorage.removeItem("selectedWorkspace");
-            setSelectedWorkspace(null);
           }
         }
-      }
-      
-      if (mounted) {
-        setCheckingWorkspace(false);
-        isChecking = false;
+
+        if (mounted) {
+          setSession(session);
+          setProfile(profileData);
+        }
+      } catch (error) {
+        console.error('Initialization error:', error);
+        await handleAuthError();
+      } finally {
+        if (mounted) {
+          setIsInitializing(false);
+        }
       }
     };
 
-    if (!loading && session) {
-      checkWorkspace();
-    }
-    
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) return;
+        
+        if (event === 'SIGNED_OUT' || !session) {
+          handleAuthError();
+          return;
+        }
+        
+        if (event === 'SIGNED_IN' && session) {
+          setSession(session);
+        }
+      }
+    );
+
+    // Timeout for slow connections
+    const timeout = setTimeout(() => {
+      if (mounted && isInitializing) {
+        console.error('Initialization timeout');
+        handleAuthError();
+      }
+    }, 30000); // 30 second timeout
+
+    initialize();
+
     return () => {
       mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
     };
-  }, [loading, session]);
+  }, [navigate]);
 
-  if (loading || checkingWorkspace) {
+  if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -179,7 +128,7 @@ const Dashboard = () => {
     return <WorkspaceSelector onSelectWorkspace={handleWorkspaceSelect} />;
   }
 
-  return <DashboardContent workspaceId={selectedWorkspace} session={session!} />;
+  return <DashboardContent workspaceId={selectedWorkspace} session={session!} profile={profile} />;
 };
 
 export default Dashboard;

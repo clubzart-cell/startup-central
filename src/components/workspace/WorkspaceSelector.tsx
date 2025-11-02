@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Plus, LogIn, Rocket } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { workspaceSchema, inviteCodeSchema } from "@/lib/validations";
+import { z } from "zod";
 
 interface WorkspaceSelectorProps {
   onSelectWorkspace: (workspaceId: string) => void;
@@ -42,23 +44,34 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!workspaceName.trim()) {
-      toast.error("Please enter a workspace name");
-      return;
+    
+    try {
+      workspaceSchema.parse({ name: workspaceName });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        return;
+      }
     }
 
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    
+    if (!user) {
+      toast.error("You must be logged in");
+      setLoading(false);
+      return;
+    }
 
     const { data: workspace, error: workspaceError } = await supabase
       .from("workspaces")
-      .insert({ name: workspaceName, created_by: user.id })
+      .insert({ name: workspaceName.trim(), created_by: user.id })
       .select()
-      .single();
+      .maybeSingle();
 
-    if (workspaceError) {
-      toast.error("Failed to create workspace");
+    if (workspaceError || !workspace) {
+      console.error('Workspace creation error:', workspaceError);
+      toast.error(`Failed to create workspace: ${workspaceError?.message || 'Unknown error'}`);
       setLoading(false);
       return;
     }
@@ -74,7 +87,15 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
       });
 
     if (memberError) {
-      toast.error("Failed to join workspace");
+      console.error('Member insert error:', memberError);
+      
+      // Rollback workspace creation
+      await supabase
+        .from("workspaces")
+        .delete()
+        .eq("id", workspace.id);
+      
+      toast.error(`Failed to create workspace: ${memberError.message}`);
       setLoading(false);
       return;
     }
@@ -85,24 +106,49 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
 
   const handleJoinWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteCode.trim()) {
-      toast.error("Please enter an invite code");
-      return;
+    
+    try {
+      inviteCodeSchema.parse(inviteCode);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        return;
+      }
     }
 
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    
+    if (!user) {
+      toast.error("You must be logged in");
+      setLoading(false);
+      return;
+    }
 
     const { data: workspace, error: workspaceError } = await supabase
       .from("workspaces")
       .select("id")
-      .eq("invite_code", inviteCode)
-      .single();
+      .eq("invite_code", inviteCode.trim())
+      .maybeSingle();
 
     if (workspaceError || !workspace) {
+      console.error('Workspace lookup error:', workspaceError);
       toast.error("Invalid invite code");
       setLoading(false);
+      return;
+    }
+
+    // Check if already a member
+    const { data: existingMember } = await supabase
+      .from("workspace_members")
+      .select("id")
+      .eq("workspace_id", workspace.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existingMember) {
+      toast.success("You are already a member of this workspace!");
+      onSelectWorkspace(workspace.id);
       return;
     }
 
@@ -115,11 +161,8 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
       });
 
     if (memberError) {
-      if (memberError.code === "23505") {
-        toast.error("You're already a member of this workspace");
-      } else {
-        toast.error("Failed to join workspace");
-      }
+      console.error('Join workspace error:', memberError);
+      toast.error(`Failed to join workspace: ${memberError.message}`);
       setLoading(false);
       return;
     }

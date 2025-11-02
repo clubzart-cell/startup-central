@@ -46,9 +46,14 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
       .select("role, can_create_tasks")
       .eq("workspace_id", workspaceId)
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    setCanCreate(data?.role === "admin" || data?.can_create_tasks === true);
+    if (!data) {
+      setCanCreate(false);
+      return;
+    }
+
+    setCanCreate(data.role === "admin" || data.can_create_tasks === true);
   };
 
   const fetchTasks = async () => {

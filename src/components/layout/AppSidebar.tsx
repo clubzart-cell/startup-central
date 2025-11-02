@@ -30,26 +30,33 @@ export function AppSidebar({ workspaceId }: AppSidebarProps) {
 
   const handleSignOut = async () => {
     try {
-      // Clear all local storage first
+      // 1. Sign out globally on server
+      await supabase.auth.signOut({ scope: 'global' });
+      
+      // 2. Clear all local state
       localStorage.clear();
+      sessionStorage.clear();
       
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error("Sign out error:", error);
-        toast.error("Failed to sign out");
-      } else {
-        toast.success("Signed out successfully");
+      // 3. Clear IndexedDB for Android WebView
+      if (window.indexedDB) {
+        const dbs = await window.indexedDB.databases();
+        dbs.forEach(db => {
+          if (db.name?.includes('supabase')) {
+            window.indexedDB.deleteDatabase(db.name);
+          }
+        });
       }
       
-      // Force reload to clear any cached state
-      window.location.href = "/auth";
-    } catch (e) {
-      console.error("Sign out exception:", e);
-      // Even if there's an error, clear storage and redirect
+      toast.success("Signed out successfully");
+      
+      // 4. Force full page reload with cache clear
+      window.location.replace("/auth");
+    } catch (error) {
+      console.error('Sign out error:', error);
+      // Force logout anyway
       localStorage.clear();
-      window.location.href = "/auth";
+      sessionStorage.clear();
+      window.location.replace("/auth");
     }
   };
 

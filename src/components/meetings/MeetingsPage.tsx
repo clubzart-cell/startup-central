@@ -36,9 +36,14 @@ export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
       .select("role, can_create_meetings")
       .eq("workspace_id", workspaceId)
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    setCanCreate(data?.role === "admin" || data?.can_create_meetings === true);
+    if (!data) {
+      setCanCreate(false);
+      return;
+    }
+
+    setCanCreate(data.role === "admin" || data.can_create_meetings === true);
   };
 
   const fetchMeetings = async () => {

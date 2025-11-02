@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Loader2, Rocket } from "lucide-react";
+import { signUpSchema, signInSchema } from "@/lib/validations";
+import { z } from "zod";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -27,13 +29,13 @@ const Auth = () => {
       }
       
       // Verify user still exists
-      const { error: userError } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('id')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
         
-      if (userError) {
+      if (!profile) {
         // User deleted, clear everything
         await supabase.auth.signOut();
         localStorage.clear();
@@ -48,14 +50,18 @@ const Auth = () => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password) {
-      toast.error("Please fill in all fields");
-      return;
+    try {
+      signInSchema.parse({ email, password });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        return;
+      }
     }
 
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim(),
       password,
     });
 
@@ -71,21 +77,20 @@ const Auth = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password || !fullName) {
-      toast.error("Please fill in all fields");
-      return;
-    }
-
-    if (password.length < 6) {
-      toast.error("Password must be at least 6 characters");
-      return;
+    try {
+      signUpSchema.parse({ email, password, fullName });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        return;
+      }
     }
 
     setLoading(true);
     
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: {
           data: {
@@ -105,9 +110,17 @@ const Auth = () => {
       if (data?.user) {
         toast.success("Account created! Welcome aboard!");
         // Wait a moment for profile creation
-        setTimeout(() => {
-          navigate("/dashboard");
-        }, 500);
+        setTimeout(async () => {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', data.user.id)
+            .maybeSingle();
+            
+          if (profile) {
+            navigate("/dashboard");
+          }
+        }, 1000);
       }
     } catch (error) {
       console.error("Signup exception:", error);

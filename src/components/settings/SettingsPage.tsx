@@ -47,7 +47,7 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
       .select("role")
       .eq("workspace_id", workspaceId)
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
     setIsAdmin(data?.role === "admin");
   };
@@ -57,10 +57,16 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
       .from("workspaces")
       .select("*")
       .eq("id", workspaceId)
-      .single();
+      .maybeSingle();
+
+    if (!data) {
+      toast.error("Workspace not found");
+      setLoading(false);
+      return;
+    }
 
     setWorkspace(data);
-    setIsCreator(data?.created_by === userId);
+    setIsCreator(data.created_by === userId);
     setLoading(false);
   };
 
