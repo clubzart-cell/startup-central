@@ -9,6 +9,8 @@ import { Loader2, Plus, LogIn, Rocket } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { workspaceSchema, inviteCodeSchema } from "@/lib/validations";
 import { z } from "zod";
+import { queryCache } from "@/lib/query-cache";
+import { withConnectionLimit } from "@/lib/connection-monitor";
 
 interface WorkspaceSelectorProps {
   onSelectWorkspace: (workspaceId: string) => void;
@@ -29,14 +31,27 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from("workspace_members")
-      .select("workspace_id, workspaces(id, name)")
-      .eq("user_id", user.id);
+    // Check cache first
+    const cacheKey = `workspaces-${user.id}`;
+    const cached = queryCache.get(cacheKey);
+    
+    if (cached) {
+      setUserWorkspaces(cached);
+      setLoadingWorkspaces(false);
+      return;
+    }
+
+    const { data, error } = await withConnectionLimit(async () => {
+      return await supabase
+        .from("workspace_members")
+        .select("workspace_id, workspaces(id, name)")
+        .eq("user_id", user.id);
+    });
 
     if (error) {
       toast.error("Failed to load workspaces");
     } else {
+      queryCache.set(cacheKey, data || []);
       setUserWorkspaces(data || []);
     }
     setLoadingWorkspaces(false);
@@ -63,45 +78,60 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
       return;
     }
 
-    const { data: workspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .insert({ name: workspaceName.trim(), created_by: user.id })
-      .select()
-      .maybeSingle();
+    let createdWorkspaceId: string | null = null;
 
-    if (workspaceError || !workspace) {
-      console.error('Workspace creation error:', workspaceError);
-      toast.error(`Failed to create workspace: ${workspaceError?.message || 'Unknown error'}`);
-      setLoading(false);
-      return;
-    }
-
-    const { error: memberError } = await supabase
-      .from("workspace_members")
-      .insert({
-        workspace_id: workspace.id,
-        user_id: user.id,
-        role: "admin",
-        can_create_tasks: true,
-        can_create_meetings: true,
-      });
-
-    if (memberError) {
-      console.error('Member insert error:', memberError);
-      
-      // Rollback workspace creation
-      await supabase
+    try {
+      const { data: workspace, error: workspaceError } = await supabase
         .from("workspaces")
-        .delete()
-        .eq("id", workspace.id);
-      
-      toast.error(`Failed to create workspace: ${memberError.message}`);
-      setLoading(false);
-      return;
-    }
+        .insert({ name: workspaceName.trim(), created_by: user.id })
+        .select()
+        .maybeSingle();
 
-    toast.success("Workspace created!");
-    onSelectWorkspace(workspace.id);
+      if (workspaceError || !workspace) {
+        throw new Error(workspaceError?.message || 'Failed to create workspace');
+      }
+
+      createdWorkspaceId = workspace.id;
+
+      const { error: memberError } = await supabase
+        .from("workspace_members")
+        .insert({
+          workspace_id: workspace.id,
+          user_id: user.id,
+          role: "admin",
+          can_create_tasks: true,
+          can_create_meetings: true,
+        });
+
+      if (memberError) {
+        throw new Error(memberError.message);
+      }
+
+      // Invalidate cache
+      queryCache.invalidate(`workspaces-${user.id}`);
+
+      toast.success("Workspace created!");
+      onSelectWorkspace(workspace.id);
+      
+    } catch (error: any) {
+      console.error('Workspace creation error:', error);
+      
+      // Rollback if workspace was created
+      if (createdWorkspaceId) {
+        try {
+          await supabase
+            .from("workspaces")
+            .delete()
+            .eq("id", createdWorkspaceId);
+        } catch (rollbackError) {
+          console.error('Rollback failed:', rollbackError);
+        }
+      }
+      
+      toast.error(`Failed to create workspace: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleJoinWorkspace = async (e: React.FormEvent) => {
@@ -125,50 +155,55 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
       return;
     }
 
-    const { data: workspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .select("id")
-      .eq("invite_code", inviteCode.trim())
-      .maybeSingle();
+    try {
+      const { data: workspace, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("id")
+        .eq("invite_code", inviteCode.trim())
+        .maybeSingle();
 
-    if (workspaceError || !workspace) {
-      console.error('Workspace lookup error:', workspaceError);
-      toast.error("Invalid invite code");
-      setLoading(false);
-      return;
-    }
+      if (workspaceError || !workspace) {
+        throw new Error("Invalid invite code");
+      }
 
-    // Check if already a member
-    const { data: existingMember } = await supabase
-      .from("workspace_members")
-      .select("id")
-      .eq("workspace_id", workspace.id)
-      .eq("user_id", user.id)
-      .maybeSingle();
+      // Check if already a member
+      const { data: existingMember } = await supabase
+        .from("workspace_members")
+        .select("id")
+        .eq("workspace_id", workspace.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (existingMember) {
-      toast.success("You are already a member of this workspace!");
+      if (existingMember) {
+        toast.success("You are already a member of this workspace!");
+        onSelectWorkspace(workspace.id);
+        return;
+      }
+
+      const { error: memberError } = await supabase
+        .from("workspace_members")
+        .insert({
+          workspace_id: workspace.id,
+          user_id: user.id,
+          role: "member",
+        });
+
+      if (memberError) {
+        throw new Error(memberError.message);
+      }
+
+      // Invalidate cache
+      queryCache.invalidate(`workspaces-${user.id}`);
+
+      toast.success("Joined workspace!");
       onSelectWorkspace(workspace.id);
-      return;
-    }
-
-    const { error: memberError } = await supabase
-      .from("workspace_members")
-      .insert({
-        workspace_id: workspace.id,
-        user_id: user.id,
-        role: "member",
-      });
-
-    if (memberError) {
-      console.error('Join workspace error:', memberError);
-      toast.error(`Failed to join workspace: ${memberError.message}`);
+      
+    } catch (error: any) {
+      console.error('Join workspace error:', error);
+      toast.error(`Failed to join workspace: ${error.message}`);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    toast.success("Joined workspace!");
-    onSelectWorkspace(workspace.id);
   };
 
   if (loadingWorkspaces) {

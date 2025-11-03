@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Circle, AlertCircle, Calendar, Loader2, Clock, Flag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { debounceAsync } from "@/lib/debounce";
 
 interface DashboardStatsProps {
   workspaceId: string;
@@ -27,39 +28,44 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
     fetchStats();
   }, [workspaceId, userId]);
 
-  const fetchStats = async () => {
-    const { data: tasks } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .eq("assigned_to", userId)
-      .order("deadline", { ascending: true, nullsFirst: false });
+  const fetchStats = useCallback(
+    debounceAsync(async () => {
+      setLoading(true);
+      
+      const { data: tasks } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .eq("assigned_to", userId)
+        .order("deadline", { ascending: true, nullsFirst: false });
 
-    const { data: meetings } = await supabase
-      .from("meetings")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .gte("start_time", new Date().toISOString())
-      .order("start_time", { ascending: true })
-      .limit(5);
+      const { data: meetings } = await supabase
+        .from("meetings")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .gte("start_time", new Date().toISOString())
+        .order("start_time", { ascending: true })
+        .limit(5);
 
-    const totalTasks = tasks?.length || 0;
-    const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
-    const pendingTasks = totalTasks - completedTasks;
-    const urgentTasks = tasks?.filter((t) => t.priority === "urgent" && t.status !== "completed").length || 0;
-    const todayMeetings = meetings?.length || 0;
+      const totalTasks = tasks?.length || 0;
+      const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
+      const pendingTasks = totalTasks - completedTasks;
+      const urgentTasks = tasks?.filter((t) => t.priority === "urgent" && t.status !== "completed").length || 0;
+      const todayMeetings = meetings?.length || 0;
 
-    setStats({
-      totalTasks,
-      completedTasks,
-      pendingTasks,
-      urgentTasks,
-      todayMeetings,
-    });
-    setAssignedTasks(tasks?.slice(0, 5) || []);
-    setUpcomingMeetings(meetings || []);
-    setLoading(false);
-  };
+      setStats({
+        totalTasks,
+        completedTasks,
+        pendingTasks,
+        urgentTasks,
+        todayMeetings,
+      });
+      setAssignedTasks(tasks?.slice(0, 5) || []);
+      setUpcomingMeetings(meetings || []);
+      setLoading(false);
+    }, 500),
+    [workspaceId, userId]
+  );
 
   const updateTaskStatus = async (taskId: string, newStatus: "pending" | "ongoing" | "pending_approval" | "completed") => {
     const { error } = await supabase

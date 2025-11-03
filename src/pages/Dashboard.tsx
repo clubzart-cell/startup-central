@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Session } from "@supabase/supabase-js";
 import { Loader2 } from "lucide-react";
 import { WorkspaceSelector } from "@/components/workspace/WorkspaceSelector";
 import { DashboardContent } from "@/components/dashboard/DashboardContent";
+import { retryWithBackoff } from "@/lib/connection-monitor";
+import { measurePerformance } from "@/lib/performance";
+import { useNetworkStatus } from "@/hooks/use-network-status";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { isSlowConnection } = useNetworkStatus();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -16,6 +19,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     let mounted = true;
+    const perf = measurePerformance('Dashboard initialization');
     
     const handleAuthError = async () => {
       if (!mounted) return;
@@ -27,8 +31,11 @@ const Dashboard = () => {
     
     const initialize = async () => {
       try {
-        // 1. Get session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // 1. Get session with retry logic
+        const { data: { session }, error: sessionError } = await retryWithBackoff(
+          () => supabase.auth.getSession(),
+          isSlowConnection ? 5 : 3
+        );
         
         if (sessionError || !session) {
           await handleAuthError();
@@ -36,11 +43,13 @@ const Dashboard = () => {
         }
 
         // 2. Fetch profile (consolidate into single call)
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
+        const { data: profileData } = await retryWithBackoff(async () => {
+          return await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+        });
         
         if (!profileData) {
           await handleAuthError();
@@ -67,6 +76,7 @@ const Dashboard = () => {
         if (mounted) {
           setSession(session);
           setProfile(profileData);
+          perf.end();
         }
       } catch (error) {
         console.error('Initialization error:', error);
@@ -94,22 +104,13 @@ const Dashboard = () => {
       }
     );
 
-    // Timeout for slow connections
-    const timeout = setTimeout(() => {
-      if (mounted && isInitializing) {
-        console.error('Initialization timeout');
-        handleAuthError();
-      }
-    }, 30000); // 30 second timeout
-
     initialize();
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, isSlowConnection]);
 
   if (isInitializing) {
     return (

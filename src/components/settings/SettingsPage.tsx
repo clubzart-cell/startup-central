@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
+import { queryCache } from "@/lib/query-cache";
 
 interface SettingsPageProps {
   workspaceId: string;
@@ -90,15 +91,21 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
   const updateMemberPermission = async (memberId: string, field: string, value: boolean) => {
     if (!isAdmin) return;
 
+    // Optimistic update
+    setMembers(prev => prev.map(m => 
+      m.id === memberId ? { ...m, [field]: value } : m
+    ));
+
     const { error } = await supabase
       .from("workspace_members")
       .update({ [field]: value })
       .eq("id", memberId);
 
     if (error) {
+      // Revert on error
+      fetchMembers();
       toast.error("Failed to update permission");
     } else {
-      fetchMembers();
       toast.success("Permission updated");
     }
   };
@@ -138,6 +145,9 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
     if (error) {
       toast.error("Failed to delete workspace");
     } else {
+      // Clear all cache
+      queryCache.clear();
+      localStorage.removeItem("selectedWorkspace");
       toast.success("Workspace deleted successfully");
       navigate("/");
     }
