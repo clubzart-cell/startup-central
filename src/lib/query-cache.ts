@@ -1,3 +1,5 @@
+import { requestDeduplicator } from './request-deduplicator';
+
 // Simple in-memory cache with TTL
 class QueryCache {
   private cache = new Map<string, { data: any; expires: number }>();
@@ -19,6 +21,24 @@ class QueryCache {
     this.cache.set(key, {
       data,
       expires: Date.now() + ttl
+    });
+  }
+
+  // Get cached data or fetch with deduplication
+  async getCached<T>(
+    key: string, 
+    fetcher: () => Promise<T>,
+    ttl = this.TTL
+  ): Promise<T> {
+    // Check cache first
+    const cached = this.get(key);
+    if (cached) return cached;
+
+    // Deduplicate concurrent requests
+    return requestDeduplicator.dedupe(key, async () => {
+      const data = await fetcher();
+      this.set(key, data, ttl);
+      return data;
     });
   }
 

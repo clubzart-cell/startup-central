@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Session } from "@supabase/supabase-js";
@@ -8,6 +8,8 @@ import { DashboardContent } from "@/components/dashboard/DashboardContent";
 import { retryWithBackoff } from "@/lib/connection-monitor";
 import { measurePerformance } from "@/lib/performance";
 import { useNetworkStatus } from "@/hooks/use-network-status";
+import { queryCache } from "@/lib/query-cache";
+import { tabSync } from "@/lib/tab-sync";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -16,9 +18,15 @@ const Dashboard = () => {
   const [profile, setProfile] = useState<any>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  
+  // Generate unique session fingerprint for this device
+  const sessionId = useRef(
+    `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  ).current;
 
   useEffect(() => {
     let mounted = true;
+    let isInitialLoad = true;
     const perf = measurePerformance('Dashboard initialization');
     
     const handleAuthError = async () => {
@@ -42,29 +50,41 @@ const Dashboard = () => {
           return;
         }
 
-        // 2. Fetch profile (consolidate into single call)
-        const { data: profileData } = await retryWithBackoff(async () => {
-          return await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-        });
+        // 2. Fetch profile with cache and deduplication
+        const profileData = await queryCache.getCached(
+          `profile-${session.user.id}`,
+          async () => {
+            const { data } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            return data;
+          },
+          10 * 60 * 1000 // 10 min cache for profile
+        );
         
         if (!profileData) {
           await handleAuthError();
           return;
         }
 
-        // 3. Check workspace membership
+        // 3. Check workspace membership with cache
         const storedWorkspaceId = localStorage.getItem("selectedWorkspace");
         if (storedWorkspaceId) {
-          const { data: membership } = await supabase
-            .from("workspace_members")
-            .select("workspace_id")
-            .eq("workspace_id", storedWorkspaceId)
-            .eq("user_id", session.user.id)
-            .maybeSingle();
+          const membership = await queryCache.getCached(
+            `membership-${session.user.id}-${storedWorkspaceId}`,
+            async () => {
+              const { data } = await supabase
+                .from("workspace_members")
+                .select("workspace_id")
+                .eq("workspace_id", storedWorkspaceId)
+                .eq("user_id", session.user.id)
+                .maybeSingle();
+              return data;
+            },
+            5 * 60 * 1000 // 5 min cache
+          );
           
           if (membership && mounted) {
             setSelectedWorkspace(storedWorkspaceId);
@@ -88,19 +108,26 @@ const Dashboard = () => {
       }
     };
 
-    // Set up auth state listener
+    // CRITICAL FIX: Only respond to auth changes on initial load or explicit sign-out
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (!mounted) return;
         
+        console.log(`[${sessionId}] Auth event:`, event);
+        
+        // Only handle SIGNED_OUT - ignore other events to prevent loops
         if (event === 'SIGNED_OUT' || !session) {
           handleAuthError();
           return;
         }
         
-        if (event === 'SIGNED_IN' && session) {
+        // On SIGNED_IN, only update if this is initial load
+        if (event === 'SIGNED_IN' && isInitialLoad) {
           setSession(session);
         }
+        
+        // Mark initial load complete after first event
+        isInitialLoad = false;
       }
     );
 
@@ -111,6 +138,29 @@ const Dashboard = () => {
       subscription.unsubscribe();
     };
   }, [navigate, isSlowConnection]);
+
+  // Tab synchronization for workspace selection
+  useEffect(() => {
+    // Notify other tabs when workspace changes
+    if (selectedWorkspace) {
+      tabSync.broadcast('workspace-selected', selectedWorkspace);
+    }
+
+    // Listen for workspace changes from other tabs
+    const handleWorkspaceChange = (data: any) => {
+      const workspaceId = data?.data;
+      if (workspaceId && workspaceId !== selectedWorkspace) {
+        setSelectedWorkspace(workspaceId);
+        localStorage.setItem("selectedWorkspace", workspaceId);
+      }
+    };
+
+    tabSync.on('workspace-selected', handleWorkspaceChange);
+
+    return () => {
+      tabSync.off('workspace-selected', handleWorkspaceChange);
+    };
+  }, [selectedWorkspace]);
 
   if (isInitializing) {
     return (

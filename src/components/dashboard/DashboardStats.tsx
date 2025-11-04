@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { debounceAsync } from "@/lib/debounce";
+import { queryCache } from "@/lib/query-cache";
 
 interface DashboardStatsProps {
   workspaceId: string;
@@ -32,37 +33,57 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
     debounceAsync(async () => {
       setLoading(true);
       
-      const { data: tasks } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .eq("assigned_to", userId)
-        .order("deadline", { ascending: true, nullsFirst: false });
+      try {
+        // Use cache and deduplication for tasks
+        const tasks = await queryCache.getCached(
+          `tasks-${workspaceId}-${userId}`,
+          async () => {
+            const { data } = await supabase
+              .from("tasks")
+              .select("*")
+              .eq("workspace_id", workspaceId)
+              .eq("assigned_to", userId)
+              .order("deadline", { ascending: true, nullsFirst: false });
+            return data || [];
+          },
+          2 * 60 * 1000 // 2 min cache
+        );
 
-      const { data: meetings } = await supabase
-        .from("meetings")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .gte("start_time", new Date().toISOString())
-        .order("start_time", { ascending: true })
-        .limit(5);
+        // Use cache for meetings
+        const meetings = await queryCache.getCached(
+          `meetings-upcoming-${workspaceId}`,
+          async () => {
+            const { data } = await supabase
+              .from("meetings")
+              .select("*")
+              .eq("workspace_id", workspaceId)
+              .gte("start_time", new Date().toISOString())
+              .order("start_time", { ascending: true })
+              .limit(5);
+            return data || [];
+          },
+          2 * 60 * 1000 // 2 min cache
+        );
 
-      const totalTasks = tasks?.length || 0;
-      const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
-      const pendingTasks = totalTasks - completedTasks;
-      const urgentTasks = tasks?.filter((t) => t.priority === "urgent" && t.status !== "completed").length || 0;
-      const todayMeetings = meetings?.length || 0;
+        // Calculate stats
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter((t) => t.status === "completed").length;
+        const pendingTasks = totalTasks - completedTasks;
+        const urgentTasks = tasks.filter((t) => t.priority === "urgent" && t.status !== "completed").length;
+        const todayMeetings = meetings.length;
 
-      setStats({
-        totalTasks,
-        completedTasks,
-        pendingTasks,
-        urgentTasks,
-        todayMeetings,
-      });
-      setAssignedTasks(tasks?.slice(0, 5) || []);
-      setUpcomingMeetings(meetings || []);
-      setLoading(false);
+        setStats({
+          totalTasks,
+          completedTasks,
+          pendingTasks,
+          urgentTasks,
+          todayMeetings,
+        });
+        setAssignedTasks(tasks.slice(0, 5));
+        setUpcomingMeetings(meetings);
+      } finally {
+        setLoading(false);
+      }
     }, 500),
     [workspaceId, userId]
   );
@@ -76,7 +97,10 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
     if (error) {
       toast.error("Failed to update task status");
     } else {
+      // Invalidate related caches
+      queryCache.invalidate(`tasks-${workspaceId}`);
       fetchStats();
+      
       if (newStatus === "pending_approval") {
         toast.success("Completion request sent to admin");
       } else if (newStatus === "ongoing") {

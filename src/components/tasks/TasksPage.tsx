@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Calendar, User } from "lucide-react";
 import { toast } from "sonner";
 import { TaskDialog } from "./TaskDialog";
+import { debounceAsync } from "@/lib/debounce";
+import { queryCache } from "@/lib/query-cache";
 
 interface TasksPageProps {
   workspaceId: string;
@@ -56,35 +58,55 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
     setCanCreate(data.role === "admin" || data.can_create_tasks === true);
   };
 
-  const fetchTasks = async () => {
-    const { data, error } = await supabase
-      .from("tasks")
-      .select(`
-        *,
-        assigned_to_profile:assigned_to(full_name),
-        created_by_profile:created_by(full_name)
-      `)
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false });
+  const fetchTasks = useCallback(
+    debounceAsync(async () => {
+      const tasks = await queryCache.getCached(
+        `all-tasks-${workspaceId}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("tasks")
+            .select(`
+              *,
+              assigned_to_profile:assigned_to(full_name),
+              created_by_profile:created_by(full_name)
+            `)
+            .eq("workspace_id", workspaceId)
+            .order("created_at", { ascending: false });
 
-    if (error) {
-      toast.error("Failed to load tasks");
-    } else {
-      setTasks(data || []);
-    }
-    setLoading(false);
-  };
+          if (error) {
+            toast.error("Failed to load tasks");
+            return [];
+          }
+          return data || [];
+        },
+        2 * 60 * 1000 // 2 min cache
+      );
+
+      setTasks(tasks);
+      setLoading(false);
+    }, 300),
+    [workspaceId]
+  );
 
   const updateTaskStatus = async (taskId: string, newStatus: "pending" | "ongoing" | "pending_approval" | "completed") => {
+    // Optimistic update
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, status: newStatus } : t
+    ));
+
     const { error } = await supabase
       .from("tasks")
       .update({ status: newStatus })
       .eq("id", taskId);
 
     if (error) {
+      // Revert on error
+      fetchTasks();
       toast.error("Failed to update task status");
     } else {
-      fetchTasks();
+      // Invalidate cache on success
+      queryCache.invalidate(`tasks-${workspaceId}`);
+      
       if (newStatus === "pending_approval") {
         toast.success("Completion request sent to admin for approval");
       } else if (newStatus === "completed") {

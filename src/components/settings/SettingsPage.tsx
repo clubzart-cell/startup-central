@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { debounceAsync } from "@/lib/debounce";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,33 +54,53 @@ export const SettingsPage = ({ workspaceId, userId }: SettingsPageProps) => {
     setIsAdmin(data?.role === "admin");
   };
 
-  const fetchWorkspaceData = async () => {
-    const { data } = await supabase
-      .from("workspaces")
-      .select("*")
-      .eq("id", workspaceId)
-      .maybeSingle();
+  const fetchWorkspaceData = useCallback(
+    debounceAsync(async () => {
+      const workspace = await queryCache.getCached(
+        `workspace-${workspaceId}`,
+        async () => {
+          const { data } = await supabase
+            .from("workspaces")
+            .select("*")
+            .eq("id", workspaceId)
+            .maybeSingle();
+          return data;
+        },
+        5 * 60 * 1000 // 5 min cache
+      );
 
-    if (!data) {
-      toast.error("Workspace not found");
+      if (!workspace) {
+        toast.error("Workspace not found");
+        setLoading(false);
+        return;
+      }
+
+      setWorkspace(workspace);
+      setIsCreator(workspace.created_by === userId);
       setLoading(false);
-      return;
-    }
+    }, 300),
+    [workspaceId, userId]
+  );
 
-    setWorkspace(data);
-    setIsCreator(data.created_by === userId);
-    setLoading(false);
-  };
+  const fetchMembers = useCallback(
+    debounceAsync(async () => {
+      const members = await queryCache.getCached(
+        `members-${workspaceId}`,
+        async () => {
+          const { data } = await supabase
+            .from("workspace_members")
+            .select("*, profiles(id, full_name)")
+            .eq("workspace_id", workspaceId)
+            .order("joined_at", { ascending: true });
+          return data || [];
+        },
+        2 * 60 * 1000 // 2 min cache
+      );
 
-  const fetchMembers = async () => {
-    const { data } = await supabase
-      .from("workspace_members")
-      .select("*, profiles(id, full_name)")
-      .eq("workspace_id", workspaceId)
-      .order("joined_at", { ascending: true });
-
-    setMembers(data || []);
-  };
+      setMembers(members);
+    }, 300),
+    [workspaceId]
+  );
 
   const copyInviteCode = () => {
     if (workspace?.invite_code) {
