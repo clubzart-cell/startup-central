@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ const statusColors = {
 };
 
 export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
+  const navigate = useNavigate();
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -82,10 +84,7 @@ export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
           <Card
             key={meeting.id}
             className="gradient-card border-border/50 hover:shadow-card transition-smooth cursor-pointer"
-            onClick={() => {
-              setSelectedMeeting(meeting);
-              setDialogOpen(true);
-            }}
+            onClick={() => navigate(`/dashboard/meeting/${meeting.id}`)}
           >
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
               <div className="flex-1">

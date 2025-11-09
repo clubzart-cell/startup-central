@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { DashboardStats } from "./DashboardStats";
 import { TasksPage } from "@/components/tasks/TasksPage";
 import { MeetingsPage } from "@/components/meetings/MeetingsPage";
+import { MeetingRoom } from "@/components/meetings/MeetingRoom";
 import { IdeasPage } from "@/components/ideas/IdeasPage";
 import { NotificationsPage } from "@/components/notifications/NotificationsPage";
 import { SettingsPage } from "@/components/settings/SettingsPage";
@@ -48,6 +49,7 @@ export const DashboardContent = ({ workspaceId, session, profile }: DashboardCon
               } />
               <Route path="tasks" element={<TasksPage workspaceId={workspaceId} userId={session.user.id} />} />
               <Route path="meetings" element={<MeetingsPage workspaceId={workspaceId} userId={session.user.id} />} />
+              <Route path="meeting/:meetingId" element={<MeetingRoom workspaceId={workspaceId} userId={session.user.id} />} />
               <Route path="ideas" element={<IdeasPage workspaceId={workspaceId} userId={session.user.id} />} />
               <Route path="notifications" element={<NotificationsPage workspaceId={workspaceId} userId={session.user.id} />} />
               <Route path="settings" element={<SettingsPage workspaceId={workspaceId} userId={session.user.id} />} />

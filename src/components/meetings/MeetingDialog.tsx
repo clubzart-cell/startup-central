@@ -54,13 +54,35 @@ export const MeetingDialog = ({ open, onOpenChange, workspaceId, userId, meeting
     }
   }, [open, meeting]);
 
+  const validateAndFormatUrl = (url: string): string => {
+    if (!url) return '';
+    
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return 'https://' + url;
+    }
+    
+    return url;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate && !meeting) return;
 
+    const formattedLink = validateAndFormatUrl(formData.meeting_link);
+    
+    if (formData.meeting_link && formattedLink) {
+      try {
+        new URL(formattedLink);
+      } catch {
+        toast.error("Invalid meeting link format");
+        return;
+      }
+    }
+
     setLoading(true);
     const payload = {
       ...formData,
+      meeting_link: formattedLink,
       workspace_id: workspaceId,
       created_by: userId,
       status: "upcoming" as const,

@@ -22,6 +22,8 @@ interface TaskDialogProps {
 export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSuccess, canCreate }: TaskDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<any[]>([]);
+  const [canEdit, setCanEdit] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -34,6 +36,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
     if (open) {
       fetchMembers();
       if (task) {
+        checkEditPermissions();
         setFormData({
           title: task.title || "",
           description: task.description || "",
@@ -53,6 +56,21 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
     }
   }, [open, task]);
 
+  const checkEditPermissions = async () => {
+    const { data: member } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const isAdminUser = member?.role === 'admin';
+    const isCreator = task?.created_by === userId;
+    
+    setIsAdmin(isAdminUser);
+    setCanEdit(isAdminUser || isCreator);
+  };
+
   const fetchMembers = async () => {
     const { data } = await supabase
       .from("workspace_members")
@@ -64,7 +82,16 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canCreate && !task) return;
+    
+    if (!task && !canCreate) {
+      toast.error("You don't have permission to create tasks");
+      return;
+    }
+    
+    if (task && !canEdit) {
+      toast.error("You don't have permission to edit this task");
+      return;
+    }
 
     setLoading(true);
     const payload = {
@@ -95,7 +122,12 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
   };
 
   const handleDelete = async () => {
-    if (!task || !canCreate) return;
+    if (!task) return;
+    
+    if (!isAdmin && task.created_by !== userId) {
+      toast.error("Only admins or task creators can delete tasks");
+      return;
+    }
     
     const { error } = await supabase.from("tasks").delete().eq("id", task.id);
     
@@ -122,7 +154,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               required
-              disabled={!canCreate && !task}
+              disabled={task ? !canEdit : !canCreate}
             />
           </div>
 
@@ -133,7 +165,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              disabled={!canCreate && !task}
+              disabled={task ? !canEdit : !canCreate}
             />
           </div>
 
@@ -143,7 +175,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
               <Select
                 value={formData.priority}
                 onValueChange={(value) => setFormData({ ...formData, priority: value })}
-                disabled={!canCreate && !task}
+                disabled={task ? !canEdit : !canCreate}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -164,7 +196,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
                 type="date"
                 value={formData.deadline}
                 onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                disabled={!canCreate && !task}
+                disabled={task ? !canEdit : !canCreate}
               />
             </div>
           </div>
@@ -174,7 +206,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
             <Select
               value={formData.assigned_to}
               onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
-              disabled={!canCreate && !task}
+              disabled={task ? !canEdit : !canCreate}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select member" />
@@ -191,7 +223,7 @@ export const TaskDialog = ({ open, onOpenChange, workspaceId, userId, task, onSu
 
           {(canCreate || task) && (
             <div className="flex gap-2 pt-4">
-              {task && canCreate && (
+              {task && (isAdmin || task.created_by === userId) && (
                 <Button
                   type="button"
                   variant="destructive"
