@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { debounceAsync } from "@/lib/debounce";
 import { queryCache } from "@/lib/query-cache";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
+import { SkeletonStats } from "@/components/ui/skeleton-card";
 
 interface DashboardStatsProps {
   workspaceId: string;
@@ -34,35 +36,45 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
       setLoading(true);
       
       try {
-        // Use cache and deduplication for tasks
+        // Priority 5: Fetch tasks (MEDIUM)
         const tasks = await queryCache.getCached(
           `tasks-${workspaceId}-${userId}`,
-          async () => {
-            const { data } = await supabase
-              .from("tasks")
-              .select("*")
-              .eq("workspace_id", workspaceId)
-              .eq("assigned_to", userId)
-              .order("deadline", { ascending: true, nullsFirst: false });
-            return data || [];
-          },
-          2 * 60 * 1000 // 2 min cache
+          () => requestQueue.enqueue(
+            `tasks-${workspaceId}-${userId}`,
+            async () => {
+              const { data } = await supabase
+                .from("tasks")
+                .select("*")
+                .eq("workspace_id", workspaceId)
+                .eq("assigned_to", userId)
+                .order("deadline", { ascending: true, nullsFirst: false });
+              return data || [];
+            },
+            RequestPriority.MEDIUM
+          ),
+          2 * 60 * 1000,
+          { staleWhileRevalidate: true, coordinateAcrossDevices: true }
         );
 
-        // Use cache for meetings
+        // Priority 5: Fetch meetings (MEDIUM)
         const meetings = await queryCache.getCached(
           `meetings-upcoming-${workspaceId}`,
-          async () => {
-            const { data } = await supabase
-              .from("meetings")
-              .select("*")
-              .eq("workspace_id", workspaceId)
-              .gte("start_time", new Date().toISOString())
-              .order("start_time", { ascending: true })
-              .limit(5);
-            return data || [];
-          },
-          2 * 60 * 1000 // 2 min cache
+          () => requestQueue.enqueue(
+            `meetings-upcoming-${workspaceId}`,
+            async () => {
+              const { data } = await supabase
+                .from("meetings")
+                .select("*")
+                .eq("workspace_id", workspaceId)
+                .gte("start_time", new Date().toISOString())
+                .order("start_time", { ascending: true })
+                .limit(5);
+              return data || [];
+            },
+            RequestPriority.MEDIUM
+          ),
+          2 * 60 * 1000,
+          { staleWhileRevalidate: true, coordinateAcrossDevices: true }
         );
 
         // Calculate stats
@@ -117,11 +129,7 @@ export const DashboardStats = ({ workspaceId, userId }: DashboardStatsProps) => 
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <SkeletonStats />;
   }
 
   const completionRate = stats.totalTasks > 0 

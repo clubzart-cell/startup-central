@@ -1,57 +1,97 @@
 import { requestDeduplicator } from './request-deduplicator';
+import { persistentCache } from './persistent-cache';
+import { crossDeviceCoordinator } from './cross-device-coordinator';
 
-// Simple in-memory cache with TTL
 class QueryCache {
-  private cache = new Map<string, { data: any; expires: number }>();
-  private TTL = 5 * 60 * 1000; // 5 minutes
+  private initPromise: Promise<void> | null = null;
 
-  get(key: string) {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
+  async init() {
+    if (this.initPromise) return this.initPromise;
     
-    if (Date.now() > entry.expires) {
-      this.cache.delete(key);
-      return null;
-    }
-    
-    return entry.data;
+    this.initPromise = Promise.all([
+      persistentCache.init(),
+      crossDeviceCoordinator.init()
+    ]).then(() => {});
+
+    return this.initPromise;
   }
 
-  set(key: string, data: any, ttl = this.TTL) {
-    this.cache.set(key, {
-      data,
-      expires: Date.now() + ttl
-    });
-  }
-
-  // Get cached data or fetch with deduplication
   async getCached<T>(
-    key: string, 
+    key: string,
     fetcher: () => Promise<T>,
-    ttl = this.TTL
+    ttl = 5 * 60 * 1000,
+    options: {
+      staleWhileRevalidate?: boolean;
+      coordinateAcrossDevices?: boolean;
+    } = {}
   ): Promise<T> {
-    // Check cache first
-    const cached = this.get(key);
-    if (cached) return cached;
+    await this.init();
 
-    // Deduplicate concurrent requests
+    const {
+      staleWhileRevalidate = true,
+      coordinateAcrossDevices = true
+    } = options;
+
+    // Try to get from cache
+    const cached = await persistentCache.get(key);
+
+    if (cached) {
+      if (!cached.isStale) {
+        // Fresh data, return immediately
+        return cached.data;
+      }
+
+      if (staleWhileRevalidate) {
+        // Return stale data immediately, fetch fresh in background
+        this.refreshInBackground(key, fetcher, ttl, coordinateAcrossDevices);
+        return cached.data;
+      }
+    }
+
+    // No cache or stale-while-revalidate disabled - fetch now
+    return this.fetchAndCache(key, fetcher, ttl, coordinateAcrossDevices);
+  }
+
+  private async fetchAndCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl: number,
+    coordinateAcrossDevices: boolean
+  ): Promise<T> {
+    // Deduplicate within this device
     return requestDeduplicator.dedupe(key, async () => {
-      const data = await fetcher();
-      this.set(key, data, ttl);
+      let data: T;
+
+      if (coordinateAcrossDevices) {
+        // Coordinate with other devices
+        data = await crossDeviceCoordinator.coordinateRequest(key, fetcher);
+      } else {
+        data = await fetcher();
+      }
+
+      await persistentCache.set(key, data, ttl);
       return data;
     });
   }
 
-  invalidate(pattern: string) {
-    for (const key of this.cache.keys()) {
-      if (key.includes(pattern)) {
-        this.cache.delete(key);
-      }
-    }
+  private refreshInBackground<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl: number,
+    coordinateAcrossDevices: boolean
+  ) {
+    // Fetch in background, don't await
+    this.fetchAndCache(key, fetcher, ttl, coordinateAcrossDevices).catch(err => {
+      console.error(`Background refresh failed for ${key}:`, err);
+    });
   }
 
-  clear() {
-    this.cache.clear();
+  async invalidate(pattern: string) {
+    await persistentCache.invalidate(pattern);
+  }
+
+  async clear() {
+    await persistentCache.clear();
   }
 }
 

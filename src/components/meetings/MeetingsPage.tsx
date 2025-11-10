@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, Clock, MapPin, Video } from "lucide-react";
 import { toast } from "sonner";
 import { MeetingDialog } from "./MeetingDialog";
+import { queryCache } from "@/lib/query-cache";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
+import { SkeletonCard } from "@/components/ui/skeleton-card";
 
 interface MeetingsPageProps {
   workspaceId: string;
@@ -49,22 +52,46 @@ export const MeetingsPage = ({ workspaceId, userId }: MeetingsPageProps) => {
   };
 
   const fetchMeetings = async () => {
-    const { data, error } = await supabase
-      .from("meetings")
-      .select("*, created_by(full_name)")
-      .eq("workspace_id", workspaceId)
-      .order("start_time", { ascending: true });
+    const meetings = await queryCache.getCached(
+      `meetings-${workspaceId}`,
+      () => requestQueue.enqueue(
+        `meetings-${workspaceId}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("meetings")
+            .select("*, created_by(full_name)")
+            .eq("workspace_id", workspaceId)
+            .order("start_time", { ascending: true });
 
-    if (error) {
-      toast.error("Failed to load meetings");
-    } else {
-      setMeetings(data || []);
-    }
+          if (error) {
+            toast.error("Failed to load meetings");
+            return [];
+          }
+          return data || [];
+        },
+        RequestPriority.MEDIUM
+      ),
+      2 * 60 * 1000,
+      { staleWhileRevalidate: true, coordinateAcrossDevices: true }
+    );
+
+    setMeetings(meetings);
     setLoading(false);
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64">Loading meetings...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Meetings</h1>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

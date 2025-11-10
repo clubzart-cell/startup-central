@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { TaskDialog } from "./TaskDialog";
 import { debounceAsync } from "@/lib/debounce";
 import { queryCache } from "@/lib/query-cache";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
+import { SkeletonTaskColumn } from "@/components/ui/skeleton-card";
 
 interface TasksPageProps {
   workspaceId: string;
@@ -62,24 +64,29 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
     debounceAsync(async () => {
       const tasks = await queryCache.getCached(
         `all-tasks-${workspaceId}`,
-        async () => {
-          const { data, error } = await supabase
-            .from("tasks")
-            .select(`
-              *,
-              assigned_to_profile:assigned_to(full_name),
-              created_by_profile:created_by(full_name)
-            `)
-            .eq("workspace_id", workspaceId)
-            .order("created_at", { ascending: false });
+        () => requestQueue.enqueue(
+          `all-tasks-${workspaceId}`,
+          async () => {
+            const { data, error } = await supabase
+              .from("tasks")
+              .select(`
+                *,
+                assigned_to_profile:assigned_to(full_name),
+                created_by_profile:created_by(full_name)
+              `)
+              .eq("workspace_id", workspaceId)
+              .order("created_at", { ascending: false });
 
-          if (error) {
-            toast.error("Failed to load tasks");
-            return [];
-          }
-          return data || [];
-        },
-        2 * 60 * 1000 // 2 min cache
+            if (error) {
+              toast.error("Failed to load tasks");
+              return [];
+            }
+            return data || [];
+          },
+          RequestPriority.MEDIUM
+        ),
+        2 * 60 * 1000,
+        { staleWhileRevalidate: true, coordinateAcrossDevices: true }
       );
 
       setTasks(tasks);
@@ -118,7 +125,18 @@ export const TasksPage = ({ workspaceId, userId }: TasksPageProps) => {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64">Loading tasks...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Tasks</h1>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <SkeletonTaskColumn key={i} />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

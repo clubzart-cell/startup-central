@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Lightbulb, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { IdeaDialog } from "./IdeaDialog";
+import { queryCache } from "@/lib/query-cache";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
+import { SkeletonCard } from "@/components/ui/skeleton-card";
 
 interface IdeasPageProps {
   workspaceId: string;
@@ -30,30 +33,50 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
   }, [workspaceId]);
 
   const fetchIdeas = async () => {
-    const { data, error } = await supabase
-      .from("ideas")
-      .select("*, created_by(full_name)")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false });
+    const ideas = await queryCache.getCached(
+      `ideas-${workspaceId}`,
+      () => requestQueue.enqueue(
+        `ideas-${workspaceId}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("ideas")
+            .select("*, created_by(full_name)")
+            .eq("workspace_id", workspaceId)
+            .order("created_at", { ascending: false });
 
-    if (error) {
-      toast.error("Failed to load ideas");
-    } else {
-      setIdeas(data || []);
-    }
+          if (error) {
+            toast.error("Failed to load ideas");
+            return [];
+          }
+          return data || [];
+        },
+        RequestPriority.MEDIUM
+      ),
+      2 * 60 * 1000,
+      { staleWhileRevalidate: true, coordinateAcrossDevices: true }
+    );
+
+    setIdeas(ideas);
     setLoading(false);
   };
 
   const updateIdeaStatus = async (ideaId: string, newStatus: string) => {
+    // Optimistic update
+    setIdeas(prev => prev.map(i => 
+      i.id === ideaId ? { ...i, status: newStatus } : i
+    ));
+
     const { error } = await supabase
       .from("ideas")
       .update({ status: newStatus })
       .eq("id", ideaId);
 
     if (error) {
+      fetchIdeas(); // Revert
       toast.error("Failed to update idea status");
     } else {
-      fetchIdeas();
+      // Invalidate cache
+      await queryCache.invalidate(`ideas-${workspaceId}`);
       toast.success("Idea status updated!");
     }
   };
@@ -90,7 +113,21 @@ export const IdeasPage = ({ workspaceId, userId }: IdeasPageProps) => {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64">Loading ideas...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Ideas Board</h1>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="space-y-3">
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

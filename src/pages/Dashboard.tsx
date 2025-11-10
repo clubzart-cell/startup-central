@@ -10,6 +10,7 @@ import { measurePerformance } from "@/lib/performance";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { queryCache } from "@/lib/query-cache";
 import { tabSync } from "@/lib/tab-sync";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -39,10 +40,14 @@ const Dashboard = () => {
     
     const initialize = async () => {
       try {
-        // 1. Get session with retry logic
-        const { data: { session }, error: sessionError } = await retryWithBackoff(
-          () => supabase.auth.getSession(),
-          isSlowConnection ? 5 : 3
+        // Priority 10: Get session (CRITICAL)
+        const { data: { session }, error: sessionError } = await requestQueue.enqueue(
+          'session',
+          () => retryWithBackoff(
+            () => supabase.auth.getSession(),
+            isSlowConnection ? 5 : 3
+          ),
+          RequestPriority.CRITICAL
         );
         
         if (sessionError || !session) {
@@ -50,18 +55,23 @@ const Dashboard = () => {
           return;
         }
 
-        // 2. Fetch profile with cache and deduplication
+        // Priority 10: Fetch profile (CRITICAL)
         const profileData = await queryCache.getCached(
           `profile-${session.user.id}`,
-          async () => {
-            const { data } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            return data;
-          },
-          10 * 60 * 1000 // 10 min cache for profile
+          () => requestQueue.enqueue(
+            `profile-${session.user.id}`,
+            async () => {
+              const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .maybeSingle();
+              return data;
+            },
+            RequestPriority.CRITICAL
+          ),
+          10 * 60 * 1000,
+          { staleWhileRevalidate: true, coordinateAcrossDevices: true }
         );
         
         if (!profileData) {
@@ -69,21 +79,26 @@ const Dashboard = () => {
           return;
         }
 
-        // 3. Check workspace membership with cache
+        // Priority 8: Check workspace membership (HIGH)
         const storedWorkspaceId = localStorage.getItem("selectedWorkspace");
         if (storedWorkspaceId) {
           const membership = await queryCache.getCached(
             `membership-${session.user.id}-${storedWorkspaceId}`,
-            async () => {
-              const { data } = await supabase
-                .from("workspace_members")
-                .select("workspace_id")
-                .eq("workspace_id", storedWorkspaceId)
-                .eq("user_id", session.user.id)
-                .maybeSingle();
-              return data;
-            },
-            5 * 60 * 1000 // 5 min cache
+            () => requestQueue.enqueue(
+              `membership-${session.user.id}-${storedWorkspaceId}`,
+              async () => {
+                const { data } = await supabase
+                  .from("workspace_members")
+                  .select("workspace_id")
+                  .eq("workspace_id", storedWorkspaceId)
+                  .eq("user_id", session.user.id)
+                  .maybeSingle();
+                return data;
+              },
+              RequestPriority.HIGH
+            ),
+            5 * 60 * 1000,
+            { staleWhileRevalidate: true, coordinateAcrossDevices: true }
           );
           
           if (membership && mounted) {

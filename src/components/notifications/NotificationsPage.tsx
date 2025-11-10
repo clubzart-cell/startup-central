@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Bell, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { queryCache } from "@/lib/query-cache";
+import { requestQueue, RequestPriority } from "@/lib/request-queue";
+import { SkeletonCard } from "@/components/ui/skeleton-card";
 
 interface NotificationsPageProps {
   workspaceId: string;
@@ -20,35 +23,55 @@ export const NotificationsPage = ({ workspaceId, userId }: NotificationsPageProp
   }, [workspaceId, userId]);
 
   const fetchNotifications = async () => {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+    const notifications = await queryCache.getCached(
+      `notifications-${workspaceId}-${userId}`,
+      () => requestQueue.enqueue(
+        `notifications-${workspaceId}-${userId}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("notifications")
+            .select("*")
+            .eq("workspace_id", workspaceId)
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false });
 
-    if (error) {
-      toast.error("Failed to load notifications");
-    } else {
-      setNotifications(data || []);
-    }
+          if (error) {
+            toast.error("Failed to load notifications");
+            return [];
+          }
+          return data || [];
+        },
+        RequestPriority.LOW
+      ),
+      1 * 60 * 1000,
+      { staleWhileRevalidate: true, coordinateAcrossDevices: true }
+    );
+
+    setNotifications(notifications);
     setLoading(false);
   };
 
   const markAsRead = async (id: string) => {
+    // Optimistic update
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
       .eq("id", id);
 
     if (error) {
+      fetchNotifications(); // Revert
       toast.error("Failed to mark as read");
     } else {
-      fetchNotifications();
+      await queryCache.invalidate(`notifications-${workspaceId}`);
     }
   };
 
   const markAllAsRead = async () => {
+    // Optimistic update
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
@@ -56,23 +79,28 @@ export const NotificationsPage = ({ workspaceId, userId }: NotificationsPageProp
       .eq("is_read", false);
 
     if (error) {
+      fetchNotifications(); // Revert
       toast.error("Failed to mark all as read");
     } else {
-      fetchNotifications();
+      await queryCache.invalidate(`notifications-${workspaceId}`);
       toast.success("All notifications marked as read");
     }
   };
 
   const deleteNotification = async (id: string) => {
+    // Optimistic update
+    setNotifications(prev => prev.filter(n => n.id !== id));
+
     const { error } = await supabase
       .from("notifications")
       .delete()
       .eq("id", id);
 
     if (error) {
+      fetchNotifications(); // Revert
       toast.error("Failed to delete notification");
     } else {
-      fetchNotifications();
+      await queryCache.invalidate(`notifications-${workspaceId}`);
       toast.success("Notification deleted");
     }
   };
@@ -80,7 +108,18 @@ export const NotificationsPage = ({ workspaceId, userId }: NotificationsPageProp
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64">Loading notifications...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Notifications</h1>
+        </div>
+        <div className="space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

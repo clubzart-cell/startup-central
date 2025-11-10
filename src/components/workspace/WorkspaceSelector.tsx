@@ -31,29 +31,27 @@ export const WorkspaceSelector = ({ onSelectWorkspace }: WorkspaceSelectorProps)
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Check cache first
-    const cacheKey = `workspaces-${user.id}`;
-    const cached = queryCache.get(cacheKey);
-    
-    if (cached) {
-      setUserWorkspaces(cached);
-      setLoadingWorkspaces(false);
-      return;
-    }
+    const workspaces = await queryCache.getCached(
+      `workspaces-${user.id}`,
+      async () => {
+        const { data, error } = await withConnectionLimit(async () => {
+          return await supabase
+            .from("workspace_members")
+            .select("workspace_id, workspaces(id, name)")
+            .eq("user_id", user.id);
+        });
+        
+        if (error) {
+          toast.error("Failed to load workspaces");
+          return [];
+        }
+        return data || [];
+      },
+      5 * 60 * 1000, // 5 min cache
+      { staleWhileRevalidate: true, coordinateAcrossDevices: true }
+    );
 
-    const { data, error } = await withConnectionLimit(async () => {
-      return await supabase
-        .from("workspace_members")
-        .select("workspace_id, workspaces(id, name)")
-        .eq("user_id", user.id);
-    });
-
-    if (error) {
-      toast.error("Failed to load workspaces");
-    } else {
-      queryCache.set(cacheKey, data || []);
-      setUserWorkspaces(data || []);
-    }
+    setUserWorkspaces(workspaces);
     setLoadingWorkspaces(false);
   };
 
